@@ -1,0 +1,29 @@
+{
+  "groups": [
+    {
+      "name": "awesome-tools",
+      "type": "com.github.huangguasky.awesometools.autoconfigure.AwesomeToolsProperties",
+      "sourceType": "com.github.huangguasky.awesometools.autoconfigure.AwesomeToolsProperties"
+    }
+  ],
+  "properties": [
+    {
+      "name": "awesome-tools.enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Whether to enable Spring Boot Awesome Tools auto configuration."
+    },
+    {
+      "name": "awesome-tools.key-prefix",
+      "type": "java.lang.String",
+      "defaultValue": "awesome-tools",
+      "description": "Prefix used for Redis and in-memory keys."
+    },
+    {
+      "name": "awesome-tools.trace-header",
+      "type": "java.lang.String",
+      "defaultValue": "X-Trace-Id",
+      "description": "HTTP header used to read or expose trace ids."
+    }
+  ]
+}
