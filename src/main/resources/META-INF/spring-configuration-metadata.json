@@ -24,6 +24,12 @@
       "type": "java.lang.String",
       "defaultValue": "X-Trace-Id",
       "description": "HTTP header used to read or expose trace ids."
+    },
+    {
+      "name": "awesome-tools.trace-filter-enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Whether to register the HTTP trace filter."
     }
   ]
 }

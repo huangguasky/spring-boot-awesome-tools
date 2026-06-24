@@ -11,6 +11,8 @@ public class AwesomeToolsProperties {
 
     private String traceHeader = "X-Trace-Id";
 
+    private boolean traceFilterEnabled = true;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -33,5 +35,13 @@ public class AwesomeToolsProperties {
 
     public void setTraceHeader(String traceHeader) {
         this.traceHeader = traceHeader;
+    }
+
+    public boolean isTraceFilterEnabled() {
+        return traceFilterEnabled;
+    }
+
+    public void setTraceFilterEnabled(boolean traceFilterEnabled) {
+        this.traceFilterEnabled = traceFilterEnabled;
     }
 }
