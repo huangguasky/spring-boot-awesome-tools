@@ -1,0 +1,71 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.github.huangguasky'
+version = '0.1.0-SNAPSHOT'
+
+base {
+    archivesName = 'spring-boot-awesome-tools-spring-boot-starter'
+}
+
+ext {
+    springBootVersion = '3.3.5'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
+
+dependencies {
+    api platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    compileOnly platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    annotationProcessor platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    testImplementation platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+
+    api 'org.springframework.boot:spring-boot-autoconfigure'
+    api 'org.springframework.boot:spring-boot-starter-aop'
+    api 'org.springframework.boot:spring-boot-starter-json'
+    api 'org.springframework.boot:spring-boot-starter-validation'
+
+    compileOnly 'org.springframework.data:spring-data-redis'
+    api 'jakarta.servlet:jakarta.servlet-api'
+    annotationProcessor 'org.springframework.boot:spring-boot-configuration-processor'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-parameters']
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'spring-boot-awesome-tools-spring-boot-starter'
+            pom {
+                name = 'spring-boot-awesome-tools'
+                description = 'Awesome annotation-based tools for Spring Boot applications.'
+                url = 'https://github.com/huangguasky/spring-boot-awesome-tools'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+            }
+        }
+    }
+}
