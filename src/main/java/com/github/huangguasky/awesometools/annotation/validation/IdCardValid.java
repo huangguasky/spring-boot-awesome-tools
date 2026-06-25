@@ -15,9 +15,18 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface IdCardValid {
 
+    /**
+     * Validation message used when the value is not a valid id card number.
+     */
     String message() default "Invalid id card number";
 
+    /**
+     * Bean Validation groups.
+     */
     Class<?>[] groups() default {};
 
+    /**
+     * Bean Validation payload metadata.
+     */
     Class<? extends Payload>[] payload() default {};
 }

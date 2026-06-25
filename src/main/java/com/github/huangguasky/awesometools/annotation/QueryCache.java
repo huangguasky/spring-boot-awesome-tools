@@ -12,11 +12,23 @@ import java.util.concurrent.TimeUnit;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface QueryCache {
 
+    /**
+     * Cache key expression. When empty, the aspect builds a key from the method and arguments.
+     */
     String key() default "";
 
+    /**
+     * Cache entry time to live.
+     */
     long expireTime() default 5;
 
+    /**
+     * Time unit used by expireTime.
+     */
     TimeUnit timeUnit() default TimeUnit.MINUTES;
 
+    /**
+     * Whether null query results should be cached.
+     */
     boolean cacheNull() default false;
 }

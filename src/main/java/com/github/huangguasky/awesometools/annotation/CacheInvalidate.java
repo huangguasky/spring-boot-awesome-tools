@@ -11,7 +11,13 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface CacheInvalidate {
 
+    /**
+     * Cache key expressions to delete for the intercepted invocation.
+     */
     String[] keys();
 
+    /**
+     * Whether to delete the cache before invoking the method. By default, deletion happens after successful invocation.
+     */
     boolean beforeInvocation() default false;
 }

@@ -11,7 +11,13 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Trace {
 
+    /**
+     * Trace span or operation name. When empty, the aspect uses method context.
+     */
     String value() default "";
 
+    /**
+     * Whether method arguments should be included in trace logs.
+     */
     boolean logArgs() default false;
 }

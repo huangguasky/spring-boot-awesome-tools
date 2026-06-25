@@ -15,15 +15,33 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface EnumValid {
 
+    /**
+     * Enum type that contains the allowed values.
+     */
     Class<? extends Enum<?>> enumClass();
 
+    /**
+     * Optional no-argument enum method whose return value is compared instead of the enum name.
+     */
     String method() default "";
 
+    /**
+     * Whether string comparison should ignore case.
+     */
     boolean ignoreCase() default false;
 
+    /**
+     * Validation message used when the value is not in the allowed enum set.
+     */
     String message() default "Invalid enum value";
 
+    /**
+     * Bean Validation groups.
+     */
     Class<?>[] groups() default {};
 
+    /**
+     * Bean Validation payload metadata.
+     */
     Class<? extends Payload>[] payload() default {};
 }

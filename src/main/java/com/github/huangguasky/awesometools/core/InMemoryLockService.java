@@ -30,4 +30,10 @@ public class InMemoryLockService implements LockService {
             }
         });
     }
+
+    @Override
+    public Optional<AwesomeToolLock> tryLock(
+            String key, long waitTime, long leaseTime, TimeUnit timeUnit, boolean renewLease) {
+        return tryLock(key, waitTime, leaseTime, timeUnit);
+    }
 }

@@ -15,9 +15,18 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MobileValid {
 
+    /**
+     * Validation message used when the value is not a valid mobile number.
+     */
     String message() default "Invalid mobile number";
 
+    /**
+     * Bean Validation groups.
+     */
     Class<?>[] groups() default {};
 
+    /**
+     * Bean Validation payload metadata.
+     */
     Class<? extends Payload>[] payload() default {};
 }

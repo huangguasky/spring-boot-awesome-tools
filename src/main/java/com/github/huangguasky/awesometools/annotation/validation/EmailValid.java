@@ -15,9 +15,18 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface EmailValid {
 
+    /**
+     * Validation message used when the value is not a valid email address.
+     */
     String message() default "Invalid email address";
 
+    /**
+     * Bean Validation groups.
+     */
     Class<?>[] groups() default {};
 
+    /**
+     * Bean Validation payload metadata.
+     */
     Class<? extends Payload>[] payload() default {};
 }

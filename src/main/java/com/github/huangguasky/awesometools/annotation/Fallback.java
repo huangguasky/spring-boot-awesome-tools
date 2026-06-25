@@ -11,9 +11,18 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Fallback {
 
+    /**
+     * Fallback method name to invoke when the original method throws a matched exception.
+     */
     String method();
 
+    /**
+     * Exception types that should trigger fallback handling.
+     */
     Class<? extends Throwable>[] include() default {Exception.class};
 
+    /**
+     * Exception types that should not trigger fallback handling, even if they match include.
+     */
     Class<? extends Throwable>[] exclude() default {};
 }

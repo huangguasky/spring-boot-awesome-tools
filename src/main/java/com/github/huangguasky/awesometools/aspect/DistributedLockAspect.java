@@ -29,7 +29,11 @@ public class DistributedLockAspect {
     public Object around(ProceedingJoinPoint joinPoint, DistributedLock distributedLock) throws Throwable {
         String key = keyBuilder.expressionKey("lock", distributedLock.key(), joinPoint);
         Optional<AwesomeToolLock> lock = lockService.tryLock(
-                key, distributedLock.waitTime(), distributedLock.leaseTime(), distributedLock.timeUnit());
+                key,
+                distributedLock.waitTime(),
+                distributedLock.leaseTime(),
+                distributedLock.timeUnit(),
+                distributedLock.renewLease());
         if (lock.isEmpty()) {
             throw new AwesomeToolsException(distributedLock.message());
         }
