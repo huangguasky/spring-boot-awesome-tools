@@ -23,19 +23,9 @@ public @interface DistributedLock {
     long waitTime() default 3;
 
     /**
-     * Lock lease time. For Redis locks, the key expires automatically after this duration unless renewLease is enabled.
-     */
-    long leaseTime() default 30;
-
-    /**
-     * Time unit used by waitTime and leaseTime.
+     * Time unit used by waitTime.
      */
     TimeUnit timeUnit() default TimeUnit.SECONDS;
-
-    /**
-     * Whether to keep renewing the lock lease while the annotated method is running.
-     */
-    boolean renewLease() default false;
 
     /**
      * Error message used when the lock cannot be acquired within waitTime.

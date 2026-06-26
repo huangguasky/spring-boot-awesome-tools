@@ -1,30 +1,19 @@
 package com.github.huangguasky.awesometools.core;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.time.Duration;
-import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.RedisScript;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 
 @ExtendWith(MockitoExtension.class)
 class RedisLockServiceTest {
@@ -32,141 +21,71 @@ class RedisLockServiceTest {
     private static final String LOCK_KEY = "lock:test";
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private RedissonClient redissonClient;
 
     @Mock
-    private ValueOperations<String, String> valueOperations;
+    private RLock lock;
 
     private RedisLockService lockService;
 
     @BeforeEach
     void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        lockService = new RedisLockService(redisTemplate);
+        when(redissonClient.getLock(LOCK_KEY)).thenReturn(lock);
+        lockService = new RedisLockService(redissonClient);
     }
 
     @Test
-    void tryLockReturnsLockAndUnlocksWithSameToken() {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(100))))
-                .thenReturn(true);
+    void tryLockUsesRedissonWatchdog() throws InterruptedException {
+        when(lock.tryLock(10, TimeUnit.SECONDS)).thenReturn(true);
 
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 10, 100, TimeUnit.MILLISECONDS);
+        Optional<AwesomeToolLock> result = lockService.tryLock(LOCK_KEY, 10, TimeUnit.SECONDS);
 
-        assertTrue(lock.isPresent());
-        ArgumentCaptor<String> tokenCaptor = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations).setIfAbsent(eq(LOCK_KEY), tokenCaptor.capture(), eq(Duration.ofMillis(100)));
-
-        lock.get().close();
-
-        verify(redisTemplate)
-                .execute(
-                        argThat((RedisScript<Long> script) -> isUnlockScript(script)),
-                        eq(Collections.singletonList(LOCK_KEY)),
-                        eq(tokenCaptor.getValue()));
+        assertTrue(result.isPresent());
+        verify(lock).tryLock(10, TimeUnit.SECONDS);
+        verify(lock, never()).tryLock(10, 30, TimeUnit.SECONDS);
     }
 
     @Test
-    void tryLockReturnsEmptyWhenRedisKeyCannotBeSetWithinWaitTime() {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(100))))
-                .thenReturn(false);
+    void tryLockReturnsEmptyWhenRedissonCannotAcquireLock() throws InterruptedException {
+        when(lock.tryLock(10, TimeUnit.SECONDS)).thenReturn(false);
 
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 0, 100, TimeUnit.MILLISECONDS);
+        Optional<AwesomeToolLock> result = lockService.tryLock(LOCK_KEY, 10, TimeUnit.SECONDS);
 
-        assertTrue(lock.isEmpty());
-        verify(valueOperations).setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(100)));
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void tryLockRoundsSubMillisecondLeaseUpToOneMillisecond() {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(1))))
-                .thenReturn(true);
+    void tryLockReturnsEmptyAndRestoresInterruptWhenInterrupted() throws InterruptedException {
+        when(lock.tryLock(10, TimeUnit.SECONDS)).thenThrow(new InterruptedException());
 
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 10, 1, TimeUnit.MICROSECONDS);
+        Optional<AwesomeToolLock> result = lockService.tryLock(LOCK_KEY, 10, TimeUnit.SECONDS);
 
-        assertTrue(lock.isPresent());
-        verify(valueOperations).setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(1)));
-        lock.get().close();
+        assertTrue(result.isEmpty());
+        assertTrue(Thread.currentThread().isInterrupted());
+        Thread.interrupted();
     }
 
     @Test
-    void tryLockDoesNotRenewLeaseByDefault() throws InterruptedException {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(30))))
-                .thenReturn(true);
+    void closeUnlocksWhenCurrentThreadStillOwnsLock() throws InterruptedException {
+        when(lock.tryLock(10, TimeUnit.SECONDS)).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
 
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 10, 30, TimeUnit.MILLISECONDS);
+        Optional<AwesomeToolLock> result = lockService.tryLock(LOCK_KEY, 10, TimeUnit.SECONDS);
 
-        assertTrue(lock.isPresent());
-        Thread.sleep(80);
+        result.get().close();
 
-        verify(redisTemplate, never())
-                .execute(
-                        argThat((RedisScript<Long> script) -> isRenewScript(script)),
-                        eq(Collections.singletonList(LOCK_KEY)),
-                        anyString(),
-                        eq("30"));
-        lock.get().close();
+        verify(lock).unlock();
     }
 
     @Test
-    void tryLockRenewsLeaseWhenRenewLeaseIsEnabled() {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(30))))
-                .thenReturn(true);
+    void closeDoesNotUnlockWhenCurrentThreadNoLongerOwnsLock() throws InterruptedException {
+        when(lock.tryLock(10, TimeUnit.SECONDS)).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(false);
 
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 10, 30, TimeUnit.MILLISECONDS, true);
+        Optional<AwesomeToolLock> result = lockService.tryLock(LOCK_KEY, 10, TimeUnit.SECONDS);
 
-        assertTrue(lock.isPresent());
-        verify(redisTemplate, timeout(300).atLeastOnce())
-                .execute(
-                        argThat((RedisScript<Long> script) -> isRenewScript(script)),
-                        eq(Collections.singletonList(LOCK_KEY)),
-                        anyString(),
-                        eq("30"));
+        result.get().close();
 
-        lock.get().close();
-
-        verify(redisTemplate, atLeastOnce())
-                .execute(
-                        argThat((RedisScript<Long> script) -> isUnlockScript(script)),
-                        eq(Collections.singletonList(LOCK_KEY)),
-                        anyString());
-    }
-
-    @Test
-    void tryLockCancelsLeaseRenewalWhenLockIsClosed() throws InterruptedException {
-        when(valueOperations.setIfAbsent(eq(LOCK_KEY), anyString(), eq(Duration.ofMillis(60))))
-                .thenReturn(true);
-
-        Optional<AwesomeToolLock> lock = lockService.tryLock(LOCK_KEY, 10, 60, TimeUnit.MILLISECONDS, true);
-
-        assertTrue(lock.isPresent());
-        verify(redisTemplate, timeout(300).atLeastOnce())
-                .execute(
-                        argThat((RedisScript<Long> script) -> isRenewScript(script)),
-                        eq(Collections.singletonList(LOCK_KEY)),
-                        anyString(),
-                        eq("60"));
-
-        lock.get().close();
-        int renewalCountAfterClose = countRenewals();
-        Thread.sleep(100);
-
-        assertEquals(renewalCountAfterClose, countRenewals());
-    }
-
-    private int countRenewals() {
-        return mockingDetails(redisTemplate).getInvocations().stream()
-                .filter(invocation -> "execute".equals(invocation.getMethod().getName()))
-                .filter(invocation -> invocation.getArguments().length == 4)
-                .filter(invocation -> isRenewScript(invocation.getArgument(0)))
-                .toList()
-                .size();
-    }
-
-    private static boolean isUnlockScript(RedisScript<?> script) {
-        return script != null && script.getScriptAsString().contains("del");
-    }
-
-    private static boolean isRenewScript(RedisScript<?> script) {
-        return script != null && script.getScriptAsString().contains("pexpire");
+        verify(lock, never()).unlock();
     }
 }

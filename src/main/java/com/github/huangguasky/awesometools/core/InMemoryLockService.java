@@ -11,7 +11,7 @@ public class InMemoryLockService implements LockService {
     private final ConcurrentMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     @Override
-    public Optional<AwesomeToolLock> tryLock(String key, long waitTime, long leaseTime, TimeUnit timeUnit) {
+    public Optional<AwesomeToolLock> tryLock(String key, long waitTime, TimeUnit timeUnit) {
         ReentrantLock lock = locks.computeIfAbsent(key, ignored -> new ReentrantLock());
         boolean acquired;
         try {
@@ -31,9 +31,4 @@ public class InMemoryLockService implements LockService {
         });
     }
 
-    @Override
-    public Optional<AwesomeToolLock> tryLock(
-            String key, long waitTime, long leaseTime, TimeUnit timeUnit, boolean renewLease) {
-        return tryLock(key, waitTime, leaseTime, timeUnit);
-    }
 }

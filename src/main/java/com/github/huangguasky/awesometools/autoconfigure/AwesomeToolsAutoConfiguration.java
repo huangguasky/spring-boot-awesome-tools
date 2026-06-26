@@ -22,12 +22,18 @@ import com.github.huangguasky.awesometools.core.KeyBuilder;
 import com.github.huangguasky.awesometools.core.LockService;
 import com.github.huangguasky.awesometools.core.RedisExpiringStore;
 import com.github.huangguasky.awesometools.core.RedisLockService;
-import com.github.huangguasky.awesometools.core.RedisRateLimitService;
 import com.github.huangguasky.awesometools.core.RateLimitService;
 import com.github.huangguasky.awesometools.sensitive.SensitiveJacksonCustomizer;
 import com.github.huangguasky.awesometools.trace.TraceFilter;
 import jakarta.servlet.Filter;
+import java.net.URI;
+import java.time.Duration;
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.redisson.config.SingleServerConfig;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -40,8 +46,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 @AutoConfiguration
-@EnableConfigurationProperties(AwesomeToolsProperties.class)
+@EnableConfigurationProperties({AwesomeToolsProperties.class, RedisProperties.class})
 @ConditionalOnProperty(prefix = "awesome-tools", name = "enabled", havingValue = "true", matchIfMissing = true)
+@SuppressWarnings("deprecation")
 public class AwesomeToolsAutoConfiguration {
 
     @Bean
@@ -131,28 +138,107 @@ public class AwesomeToolsAutoConfiguration {
     }
 
     @Configuration(proxyBeanMethods = false)
-    @ConditionalOnClass(StringRedisTemplate.class)
-    static class RedisConfiguration {
+    @ConditionalOnClass(RedissonClient.class)
+    static class RedissonLockConfiguration {
+
+        @Bean(destroyMethod = "shutdown")
+        @ConditionalOnBean(type = "org.springframework.data.redis.core.StringRedisTemplate")
+        @ConditionalOnMissingBean(RedissonClient.class)
+        RedissonClient awesomeToolsRedissonClient(RedisProperties redisProperties) {
+            Config config = new Config();
+            SingleServerConfig singleServer = config.useSingleServer();
+            applyRedisProperties(singleServer, redisProperties);
+            return Redisson.create(config);
+        }
 
         @Bean
-        @ConditionalOnBean(StringRedisTemplate.class)
+        @ConditionalOnBean(RedissonClient.class)
         @ConditionalOnMissingBean(LockService.class)
-        LockService redisLockService(StringRedisTemplate redisTemplate) {
-            return new RedisLockService(redisTemplate);
+        LockService redissonLockService(RedissonClient redissonClient) {
+            return new RedisLockService(redissonClient);
         }
+
+        private void applyRedisProperties(SingleServerConfig singleServer, RedisProperties redisProperties) {
+            RedisConnectionDetails details = resolveRedisConnectionDetails(redisProperties);
+            singleServer.setAddress(details.address());
+            singleServer.setDatabase(details.database());
+            if (hasText(details.username())) {
+                singleServer.setUsername(details.username());
+            }
+            if (hasText(details.password())) {
+                singleServer.setPassword(details.password());
+            }
+            if (hasText(redisProperties.getClientName())) {
+                singleServer.setClientName(redisProperties.getClientName());
+            }
+            if (redisProperties.getTimeout() != null) {
+                singleServer.setTimeout(toMillis(redisProperties.getTimeout()));
+            }
+            if (redisProperties.getConnectTimeout() != null) {
+                singleServer.setConnectTimeout(toMillis(redisProperties.getConnectTimeout()));
+            }
+        }
+
+        @SuppressWarnings("deprecation")
+        private RedisConnectionDetails resolveRedisConnectionDetails(RedisProperties redisProperties) {
+            if (hasText(redisProperties.getUrl())) {
+                return fromUrl(redisProperties.getUrl(), redisProperties);
+            }
+            String scheme = redisProperties.getSsl().isEnabled() ? "rediss" : "redis";
+            String address = scheme + "://" + redisProperties.getHost() + ":" + redisProperties.getPort();
+            return new RedisConnectionDetails(
+                    address,
+                    redisProperties.getUsername(),
+                    redisProperties.getPassword(),
+                    redisProperties.getDatabase());
+        }
+
+        private RedisConnectionDetails fromUrl(String url, RedisProperties redisProperties) {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme() == null ? "redis" : uri.getScheme();
+            int port = uri.getPort() == -1 ? redisProperties.getPort() : uri.getPort();
+            String address = scheme + "://" + uri.getHost() + ":" + port;
+            String username = redisProperties.getUsername();
+            String password = redisProperties.getPassword();
+            String userInfo = uri.getUserInfo();
+            if (hasText(userInfo)) {
+                String[] parts = userInfo.split(":", 2);
+                if (parts.length == 2) {
+                    username = hasText(parts[0]) ? parts[0] : username;
+                    password = parts[1];
+                } else {
+                    password = userInfo;
+                }
+            }
+            int database = redisProperties.getDatabase();
+            String path = uri.getPath();
+            if (hasText(path) && path.length() > 1) {
+                database = Integer.parseInt(path.substring(1));
+            }
+            return new RedisConnectionDetails(address, username, password, database);
+        }
+
+        private int toMillis(Duration duration) {
+            return Math.toIntExact(duration.toMillis());
+        }
+
+        private boolean hasText(String value) {
+            return value != null && !value.isBlank();
+        }
+
+        private record RedisConnectionDetails(String address, String username, String password, int database) {
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ConditionalOnClass(StringRedisTemplate.class)
+    static class RedisConfiguration {
 
         @Bean
         @ConditionalOnBean(StringRedisTemplate.class)
         @ConditionalOnMissingBean(ExpiringStore.class)
         ExpiringStore redisExpiringStore(StringRedisTemplate redisTemplate) {
             return new RedisExpiringStore(redisTemplate);
-        }
-
-        @Bean
-        @ConditionalOnBean(StringRedisTemplate.class)
-        @ConditionalOnMissingBean(RateLimitService.class)
-        RateLimitService redisRateLimitService(StringRedisTemplate redisTemplate) {
-            return new RedisRateLimitService(redisTemplate);
         }
 
         @Bean

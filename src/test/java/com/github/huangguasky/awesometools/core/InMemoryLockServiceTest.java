@@ -16,13 +16,13 @@ class InMemoryLockServiceTest {
 
     @Test
     void tryLockRejectsSameKeyFromAnotherThreadUntilLockIsClosed() throws ExecutionException, InterruptedException {
-        Optional<AwesomeToolLock> firstLock = lockService.tryLock("order:1", 0, 1, TimeUnit.SECONDS);
+        Optional<AwesomeToolLock> firstLock = lockService.tryLock("order:1", 0, TimeUnit.SECONDS);
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
         assertTrue(firstLock.isPresent());
         try {
             Future<Optional<AwesomeToolLock>> competingLock =
-                    executor.submit(() -> lockService.tryLock("order:1", 0, 1, TimeUnit.SECONDS));
+                    executor.submit(() -> lockService.tryLock("order:1", 0, TimeUnit.SECONDS));
 
             assertTrue(competingLock.get().isEmpty());
         } finally {
@@ -31,14 +31,7 @@ class InMemoryLockServiceTest {
 
         firstLock.get().close();
 
-        assertTrue(lockService.tryLock("order:1", 0, 1, TimeUnit.SECONDS).isPresent());
+        assertTrue(lockService.tryLock("order:1", 0, TimeUnit.SECONDS).isPresent());
     }
 
-    @Test
-    void tryLockWithRenewLeaseFlagUsesSameInMemorySemantics() {
-        Optional<AwesomeToolLock> lock = lockService.tryLock("order:2", 0, 1, TimeUnit.SECONDS, true);
-
-        assertTrue(lock.isPresent());
-        lock.get().close();
-    }
 }

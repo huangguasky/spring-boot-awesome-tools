@@ -29,8 +29,8 @@ public class RateLimitAspect {
         String key = rateLimit.key().isBlank()
                 ? keyBuilder.methodKey("rate-limit", joinPoint)
                 : keyBuilder.expressionKey("rate-limit", rateLimit.key(), joinPoint);
-        Duration window = Duration.ofMillis(rateLimit.timeUnit().toMillis(rateLimit.window()));
-        if (!rateLimitService.tryAcquire(key, rateLimit.limit(), window)) {
+        Duration window = Duration.ofNanos(Math.max(1, rateLimit.timeUnit().toNanos(rateLimit.window())));
+        if (!rateLimitService.tryAcquire(key, rateLimit.limit(), window, rateLimit.type())) {
             throw new AwesomeToolsException(rateLimit.message());
         }
         return joinPoint.proceed();

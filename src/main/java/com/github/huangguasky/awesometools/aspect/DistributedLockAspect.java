@@ -31,9 +31,7 @@ public class DistributedLockAspect {
         Optional<AwesomeToolLock> lock = lockService.tryLock(
                 key,
                 distributedLock.waitTime(),
-                distributedLock.leaseTime(),
-                distributedLock.timeUnit(),
-                distributedLock.renewLease());
+                distributedLock.timeUnit());
         if (lock.isEmpty()) {
             throw new AwesomeToolsException(distributedLock.message());
         }

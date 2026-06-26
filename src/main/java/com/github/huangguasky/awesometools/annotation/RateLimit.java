@@ -33,6 +33,11 @@ public @interface RateLimit {
     TimeUnit timeUnit() default TimeUnit.SECONDS;
 
     /**
+     * Local rate limit algorithm to use.
+     */
+    RateLimitType type() default RateLimitType.FIXED_WINDOW;
+
+    /**
      * Error message used when the limit is exceeded.
      */
     String message() default "Too many requests";

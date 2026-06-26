@@ -1,20 +1,24 @@
 # spring-boot-awesome-tools
 
-Spring Boot 常用业务注解工具包。引入 starter 后即可直接使用：
+Annotation-driven utilities for common Spring Boot business concerns. Add the starter and use the annotations directly:
 
-- `@DistributedLock` 分布式锁
-- `@Idempotent` 幂等
-- `@AuditLog` 审计日志
-- `@NoRepeatSubmit` 防重复提交
-- `@Trace` 链路追踪日志
-- `@RateLimit` 限流
-- `@RetryableTask` 重试
-- `@Fallback` 降级兜底
-- `@Sensitive` 字段脱敏
-- `@QueryCache` 查询缓存
-- `@MobileValid`、`@EmailValid`、`@IdCardValid`、`@EnumValid` 参数校验
+- `@DistributedLock` distributed lock
+- `@Idempotent` idempotency guard
+- `@AuditLog` audit log event publishing
+- `@NoRepeatSubmit` duplicate submit protection
+- `@Trace` trace logging
+- `@RateLimit` local rate limiting
+- `@RetryableTask` retry
+- `@Fallback` fallback handling
+- `@Sensitive` JSON field masking
+- `@QueryCache` query cache
+- `@MobileValid`, `@EmailValid`, `@IdCardValid`, `@EnumValid` validation annotations
 
-## 安装
+## Requirements
+
+This project is built with Spring Boot 3.3.5 and targets Java 17. Applications using this starter should run on JDK 17 or later.
+
+## Installation
 
 Maven:
 
@@ -32,18 +36,57 @@ Gradle:
 implementation 'com.github.huangguasky:spring-boot-awesome-tools-spring-boot-starter:0.1.0-SNAPSHOT'
 ```
 
-如需跨实例生效，请在业务项目中正常配置 Spring Data Redis 的 `StringRedisTemplate`。starter 检测到 Redis 后会自动使用 Redis；没有 Redis 时会使用本地内存实现，适合本地开发和单实例应用。
+## Redis And Redisson
 
-## 项目构建
+For cross-instance behavior, configure Redis in your application.
 
-本项目同时支持 Maven 和 Gradle 构建：
+Distributed locks use Redisson `RLock`. When a `StringRedisTemplate` bean exists and no custom `RedissonClient` is provided, the starter creates a `RedissonClient` from `spring.data.redis.*`. Cache, idempotency, and duplicate-submit storage continue to use Spring Data Redis through `StringRedisTemplate`. Rate limiting is local in-memory only.
+
+Typical single-node Redis configuration:
+
+```yaml
+spring:
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      database: 0
+      password:
+```
+
+For cluster, sentinel, or advanced Redisson settings, provide your own `RedissonClient` bean:
+
+```java
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class RedissonConfiguration {
+
+    @Bean(destroyMethod = "shutdown")
+    public RedissonClient redissonClient() {
+        Config config = new Config();
+        config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+        return Redisson.create(config);
+    }
+}
+```
+
+Without the matching Redis beans, the starter falls back to local in-memory implementations where available. This is useful for local development and single-instance applications.
+
+## Build
+
+The project supports Maven and Gradle:
 
 ```bash
 mvn test
 gradle test
 ```
 
-## 快速使用
+## Quick Start
 
 ```java
 import com.github.huangguasky.awesometools.annotation.AuditLog;
@@ -60,9 +103,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class OrderService {
 
-    @DistributedLock(key = "'order:pay:' + #orderId", waitTime = 3, leaseTime = 30)
+    @DistributedLock(key = "'order:pay:' + #orderId", waitTime = 3)
     @Idempotent(key = "'pay:' + #requestId", expireTime = 10, timeUnit = TimeUnit.MINUTES)
-    @AuditLog(value = "支付订单", bizNo = "#orderId")
+    @AuditLog(value = "pay order", bizNo = "#orderId")
     public void pay(Long orderId, String requestId) {
         // business code
     }
@@ -80,11 +123,36 @@ public class OrderService {
 }
 ```
 
-注解里的 `key` 支持 SpEL，可使用方法参数名、`#args`、`#methodName`、`#className`。
+Annotation `key` values support SpEL. You can use method parameter names, `#args`, `#methodName`, and `#className`.
 
-## 查询缓存
+## Local Rate Limiting
 
-`@QueryCache` 用于查询方法。Redis 存在时缓存到 Redis；没有 Redis 时缓存到本地内存。
+`@RateLimit` supports four local in-memory algorithms. The default is `FIXED_WINDOW`.
+
+```java
+import com.github.huangguasky.awesometools.annotation.RateLimit;
+import com.github.huangguasky.awesometools.annotation.RateLimitType;
+import java.util.concurrent.TimeUnit;
+
+@RateLimit(
+        key = "'sms:' + #mobile",
+        limit = 3,
+        window = 60,
+        timeUnit = TimeUnit.SECONDS,
+        type = RateLimitType.SLIDING_WINDOW)
+public void sendSms(String mobile) {
+    // send sms
+}
+```
+
+- `FIXED_WINDOW`: allows at most `limit` requests in each fixed window.
+- `SLIDING_WINDOW`: allows at most `limit` requests in any rolling `window`.
+- `LEAKY_BUCKET`: uses a bucket with capacity `limit` and leaks at `limit / window`.
+- `TOKEN_BUCKET`: uses a bucket with capacity `limit` and refills at `limit / window`, allowing short bursts.
+
+## Query Cache
+
+`@QueryCache` caches query method results. With Redis, values are stored in Redis. Without Redis, values are stored in local memory.
 
 ```java
 @QueryCache(key = "'user:' + #userId", expireTime = 10, timeUnit = TimeUnit.MINUTES, cacheNull = true)
@@ -93,7 +161,7 @@ public UserInfo getUser(Long userId) {
 }
 ```
 
-更新数据后可用 `@CacheInvalidate` 删除缓存：
+After updating data, use `@CacheInvalidate` to delete cache entries:
 
 ```java
 @CacheInvalidate(keys = {"'user:' + #userId"})
@@ -102,7 +170,7 @@ public void updateUser(Long userId, UserUpdateCommand command) {
 }
 ```
 
-## 重试和降级
+## Retry And Fallback
 
 ```java
 @RetryableTask(maxAttempts = 3, delayMillis = 200, multiplier = 2.0)
@@ -116,9 +184,9 @@ private UserInfo defaultUser(Long userId, Throwable ex) {
 }
 ```
 
-## 脱敏
+## Sensitive Data Masking
 
-字段或 getter 上标记 `@Sensitive` 后，Jackson 输出 JSON 时会自动脱敏，不改变对象本身。
+Mark fields or getters with `@Sensitive`. Jackson output will be masked without changing the original object.
 
 ```java
 import com.github.huangguasky.awesometools.annotation.Sensitive;
@@ -134,9 +202,9 @@ public class UserInfo {
 }
 ```
 
-## 参数校验
+## Validation
 
-参数校验注解放在 `com.github.huangguasky.awesometools.annotation.validation` 包下：
+Validation annotations live under `com.github.huangguasky.awesometools.annotation.validation`.
 
 ```java
 import com.github.huangguasky.awesometools.annotation.validation.EmailValid;
@@ -160,16 +228,18 @@ public class UserCreateRequest {
 }
 ```
 
-`@EnumValid` 默认校验枚举 `name()`；如果枚举有 `getCode()`，可以这样使用：
+`@EnumValid` validates enum `name()` by default. If the enum exposes a code method, configure it like this:
 
 ```java
 @EnumValid(enumClass = UserStatus.class, method = "getCode")
 private Integer status;
 ```
 
-## 审计日志落库
+## Audit Logs
 
-`@AuditLog` 会发布 `AuditLogEvent`，业务侧监听后自行落库、发 MQ 或输出日志：
+`@AuditLog` publishes `AuditLogEvent`. The starter does not persist audit logs by itself. Applications can listen for the event and save records, send messages, or write logs.
+
+Option 1: `@EventListener`
 
 ```java
 import com.github.huangguasky.awesometools.audit.AuditLogEvent;
@@ -187,7 +257,26 @@ public class AuditLogListener {
 }
 ```
 
-## 配置
+Option 2: `ApplicationListener<AuditLogEvent>`
+
+```java
+import com.github.huangguasky.awesometools.audit.AuditLogEvent;
+import com.github.huangguasky.awesometools.audit.AuditLogRecord;
+import org.springframework.context.ApplicationListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class AuditLogApplicationListener implements ApplicationListener<AuditLogEvent> {
+
+    @Override
+    public void onApplicationEvent(AuditLogEvent event) {
+        AuditLogRecord record = event.getRecord();
+        // save record, send MQ, or write log
+    }
+}
+```
+
+## Configuration
 
 ```yaml
 awesome-tools:
@@ -197,12 +286,12 @@ awesome-tools:
   trace-filter-enabled: true
 ```
 
-## 说明
+## Feature Notes
 
-- `@DistributedLock`：同一个 key 同一时间只允许一个线程或实例执行。
-- `@Idempotent`：同一个 key 在过期时间内只允许成功执行一次；业务异常时会释放 key。
-- `@NoRepeatSubmit`：同一个 key 在间隔时间内拒绝重复提交；未指定 key 时按方法签名和参数生成。
-- `@RateLimit`：固定窗口限流，适合接口防刷、验证码、登录尝试等场景。
-- `@QueryCache`：查询方法缓存，Redis/内存自动切换。
-- `@AuditLog`：记录方法、业务号、成功状态、异常消息和耗时，并通过 Spring 事件交给业务系统处理。
-- `@Trace`：自动生成或复用 MDC `traceId`，HTTP 请求会写入响应头。
+- `@DistributedLock`: allows only one thread or instance to execute for the same key. With `RedissonClient`, it uses Redisson `RLock` and Redisson watchdog renewal.
+- `@Idempotent`: allows one successful execution for the same key within the expiry period. The key is released when business execution fails.
+- `@NoRepeatSubmit`: rejects repeated submits for the same key within the configured interval. If no key is specified, the method signature and arguments are used.
+- `@RateLimit`: local in-memory rate limiting with fixed window, sliding window, leaky bucket, and token bucket algorithms.
+- `@QueryCache`: query method cache with Redis/local-memory switching.
+- `@AuditLog`: records method, business number, success status, exception message, and cost, then publishes a Spring event.
+- `@Trace`: creates or reuses an MDC `traceId`; HTTP requests also receive the trace id in the response header.
