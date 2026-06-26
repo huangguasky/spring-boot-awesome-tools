@@ -30,6 +30,28 @@
       "type": "java.lang.Boolean",
       "defaultValue": true,
       "description": "Whether to register the HTTP trace filter."
+    },
+    {
+      "name": "awesome-tools.exception-handler-enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Whether to register the default global exception handler."
+    },
+    {
+      "name": "awesome-tools.request-log-enabled",
+      "type": "java.lang.Boolean",
+      "defaultValue": true,
+      "description": "Whether to register the HTTP request log filter."
+    },
+    {
+      "name": "awesome-tools.request-log-exclude-patterns",
+      "type": "java.lang.String[]",
+      "defaultValue": [
+        "/actuator/**",
+        "/swagger/**",
+        "/v3/api-docs/**"
+      ],
+      "description": "Path patterns ignored by the HTTP request log filter."
     }
   ]
 }

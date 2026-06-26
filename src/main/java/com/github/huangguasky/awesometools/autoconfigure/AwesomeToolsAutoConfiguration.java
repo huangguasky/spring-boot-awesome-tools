@@ -1,6 +1,7 @@
 package com.github.huangguasky.awesometools.autoconfigure;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.huangguasky.awesometools.aspect.AsyncEventAspect;
 import com.github.huangguasky.awesometools.aspect.AuditLogAspect;
 import com.github.huangguasky.awesometools.aspect.DistributedLockAspect;
 import com.github.huangguasky.awesometools.aspect.FallbackAspect;
@@ -9,6 +10,7 @@ import com.github.huangguasky.awesometools.aspect.NoRepeatSubmitAspect;
 import com.github.huangguasky.awesometools.aspect.QueryCacheAspect;
 import com.github.huangguasky.awesometools.aspect.RateLimitAspect;
 import com.github.huangguasky.awesometools.aspect.RetryableTaskAspect;
+import com.github.huangguasky.awesometools.aspect.SlowLogAspect;
 import com.github.huangguasky.awesometools.aspect.TraceAspect;
 import com.github.huangguasky.awesometools.cache.CacheService;
 import com.github.huangguasky.awesometools.cache.InMemoryCacheService;
@@ -23,11 +25,17 @@ import com.github.huangguasky.awesometools.core.LockService;
 import com.github.huangguasky.awesometools.core.RedisExpiringStore;
 import com.github.huangguasky.awesometools.core.RedisLockService;
 import com.github.huangguasky.awesometools.core.RateLimitService;
+import com.github.huangguasky.awesometools.event.AsyncEventPublisher;
 import com.github.huangguasky.awesometools.sensitive.SensitiveJacksonCustomizer;
 import com.github.huangguasky.awesometools.trace.TraceFilter;
+import com.github.huangguasky.awesometools.web.AwesomeToolsExceptionHandler;
+import com.github.huangguasky.awesometools.web.DefaultErrorResponseBuilder;
+import com.github.huangguasky.awesometools.web.ErrorResponseBuilder;
+import com.github.huangguasky.awesometools.web.RequestLogFilter;
 import jakarta.servlet.Filter;
 import java.net.URI;
 import java.time.Duration;
+import java.util.concurrent.Executor;
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
 import org.redisson.config.Config;
@@ -44,6 +52,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 @AutoConfiguration
 @EnableConfigurationProperties({AwesomeToolsProperties.class, RedisProperties.class})
@@ -101,6 +113,12 @@ public class AwesomeToolsAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public SlowLogAspect slowLogAspect() {
+        return new SlowLogAspect();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public RetryableTaskAspect retryableTaskAspect() {
         return new RetryableTaskAspect();
     }
@@ -119,10 +137,53 @@ public class AwesomeToolsAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean(name = "awesomeToolsAsyncEventExecutor")
+    public Executor awesomeToolsAsyncEventExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("awesome-event-");
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(1024);
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AsyncEventPublisher asyncEventPublisher(
+            ApplicationEventPublisher eventPublisher,
+            @Qualifier("awesomeToolsAsyncEventExecutor") Executor awesomeToolsAsyncEventExecutor) {
+        return new AsyncEventPublisher(eventPublisher, awesomeToolsAsyncEventExecutor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public AsyncEventAspect asyncEventAspect(
+            @Qualifier("awesomeToolsAsyncEventExecutor") Executor awesomeToolsAsyncEventExecutor) {
+        return new AsyncEventAspect(awesomeToolsAsyncEventExecutor);
+    }
+
+    @Bean
     @ConditionalOnClass(ObjectMapper.class)
     @ConditionalOnMissingBean
     public SensitiveJacksonCustomizer sensitiveJacksonCustomizer() {
         return new SensitiveJacksonCustomizer();
+    }
+
+    @Bean
+    @ConditionalOnClass(RestControllerAdvice.class)
+    @ConditionalOnProperty(prefix = "awesome-tools", name = "exception-handler-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean
+    public ErrorResponseBuilder errorResponseBuilder() {
+        return new DefaultErrorResponseBuilder();
+    }
+
+    @Bean
+    @ConditionalOnClass(RestControllerAdvice.class)
+    @ConditionalOnProperty(prefix = "awesome-tools", name = "exception-handler-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean
+    public AwesomeToolsExceptionHandler awesomeToolsExceptionHandler(ErrorResponseBuilder errorResponseBuilder) {
+        return new AwesomeToolsExceptionHandler(errorResponseBuilder);
     }
 
     @Bean
@@ -134,6 +195,19 @@ public class AwesomeToolsAutoConfiguration {
         registration.setFilter(new TraceFilter(properties));
         registration.setName("awesomeToolsTraceFilter");
         registration.setOrder(Integer.MIN_VALUE + 100);
+        return registration;
+    }
+
+    @Bean
+    @ConditionalOnClass(OncePerRequestFilter.class)
+    @ConditionalOnProperty(prefix = "awesome-tools", name = "request-log-enabled", havingValue = "true", matchIfMissing = true)
+    @ConditionalOnMissingBean(name = "awesomeToolsRequestLogFilterRegistration")
+    public FilterRegistrationBean<RequestLogFilter> awesomeToolsRequestLogFilterRegistration(
+            AwesomeToolsProperties properties) {
+        FilterRegistrationBean<RequestLogFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(new RequestLogFilter(properties));
+        registration.setName("awesomeToolsRequestLogFilter");
+        registration.setOrder(Integer.MIN_VALUE + 200);
         return registration;
     }
 

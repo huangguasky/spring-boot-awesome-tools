@@ -13,6 +13,12 @@ public class AwesomeToolsProperties {
 
     private boolean traceFilterEnabled = true;
 
+    private boolean exceptionHandlerEnabled = true;
+
+    private boolean requestLogEnabled = true;
+
+    private String[] requestLogExcludePatterns = {"/actuator/**", "/swagger/**", "/v3/api-docs/**"};
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -43,5 +49,29 @@ public class AwesomeToolsProperties {
 
     public void setTraceFilterEnabled(boolean traceFilterEnabled) {
         this.traceFilterEnabled = traceFilterEnabled;
+    }
+
+    public boolean isExceptionHandlerEnabled() {
+        return exceptionHandlerEnabled;
+    }
+
+    public void setExceptionHandlerEnabled(boolean exceptionHandlerEnabled) {
+        this.exceptionHandlerEnabled = exceptionHandlerEnabled;
+    }
+
+    public boolean isRequestLogEnabled() {
+        return requestLogEnabled;
+    }
+
+    public void setRequestLogEnabled(boolean requestLogEnabled) {
+        this.requestLogEnabled = requestLogEnabled;
+    }
+
+    public String[] getRequestLogExcludePatterns() {
+        return requestLogExcludePatterns;
+    }
+
+    public void setRequestLogExcludePatterns(String[] requestLogExcludePatterns) {
+        this.requestLogExcludePatterns = requestLogExcludePatterns;
     }
 }

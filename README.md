@@ -7,12 +7,16 @@ Annotation-driven utilities for common Spring Boot business concerns. Add the st
 - `@AuditLog` audit log event publishing
 - `@NoRepeatSubmit` duplicate submit protection
 - `@Trace` trace logging
+- `@SlowLog` slow method warning logs
 - `@RateLimit` local rate limiting
 - `@RetryableTask` retry
 - `@Fallback` fallback handling
+- Global exception handling
+- HTTP request logging
+- Local async event publishing
 - `@Sensitive` JSON field masking
 - `@QueryCache` query cache
-- `@MobileValid`, `@EmailValid`, `@IdCardValid`, `@EnumValid` validation annotations
+- `@MobileValid`, `@EmailValid`, `@IdCardValid`, `@EnumValid`, `@UrlValid`, `@IpValid`, `@DateRangeValid`, `@PasswordValid`, `@StringIn` validation annotations
 
 ## Requirements
 
@@ -95,6 +99,7 @@ import com.github.huangguasky.awesometools.annotation.Idempotent;
 import com.github.huangguasky.awesometools.annotation.NoRepeatSubmit;
 import com.github.huangguasky.awesometools.annotation.QueryCache;
 import com.github.huangguasky.awesometools.annotation.RateLimit;
+import com.github.huangguasky.awesometools.annotation.SlowLog;
 import com.github.huangguasky.awesometools.annotation.Trace;
 import java.util.concurrent.TimeUnit;
 import org.springframework.stereotype.Service;
@@ -116,6 +121,7 @@ public class OrderService {
     }
 
     @RateLimit(key = "'order:detail:' + #userId", limit = 20, window = 1)
+    @SlowLog(thresholdMillis = 500)
     @QueryCache(key = "'order:' + #orderId", expireTime = 5, timeUnit = TimeUnit.MINUTES)
     public OrderDetail detail(Long userId, Long orderId) {
         return queryOrder(orderId);
@@ -149,6 +155,17 @@ public void sendSms(String mobile) {
 - `SLIDING_WINDOW`: allows at most `limit` requests in any rolling `window`.
 - `LEAKY_BUCKET`: uses a bucket with capacity `limit` and leaks at `limit / window`.
 - `TOKEN_BUCKET`: uses a bucket with capacity `limit` and refills at `limit / window`, allowing short bursts.
+
+## Slow Logs
+
+`@SlowLog` prints a warning when method execution exceeds the threshold.
+
+```java
+@SlowLog(value = "export report", thresholdMillis = 1000, logArgs = true)
+public void exportReport(Long reportId) {
+    // slow business code
+}
+```
 
 ## Query Cache
 
@@ -210,7 +227,11 @@ Validation annotations live under `com.github.huangguasky.awesometools.annotatio
 import com.github.huangguasky.awesometools.annotation.validation.EmailValid;
 import com.github.huangguasky.awesometools.annotation.validation.EnumValid;
 import com.github.huangguasky.awesometools.annotation.validation.IdCardValid;
+import com.github.huangguasky.awesometools.annotation.validation.IpValid;
 import com.github.huangguasky.awesometools.annotation.validation.MobileValid;
+import com.github.huangguasky.awesometools.annotation.validation.PasswordValid;
+import com.github.huangguasky.awesometools.annotation.validation.StringIn;
+import com.github.huangguasky.awesometools.annotation.validation.UrlValid;
 
 public class UserCreateRequest {
 
@@ -225,6 +246,18 @@ public class UserCreateRequest {
 
     @EnumValid(enumClass = UserStatus.class)
     private String status;
+
+    @PasswordValid(requireSpecial = true)
+    private String password;
+
+    @UrlValid
+    private String homepage;
+
+    @IpValid
+    private String loginIp;
+
+    @StringIn({"ADMIN", "USER"})
+    private String role;
 }
 ```
 
@@ -234,6 +267,51 @@ public class UserCreateRequest {
 @EnumValid(enumClass = UserStatus.class, method = "getCode")
 private Integer status;
 ```
+
+Use `@DateRangeValid` on a request object to compare two date/time fields:
+
+```java
+@DateRangeValid(startField = "startDate", endField = "endDate")
+public class ReportQuery {
+    private LocalDate startDate;
+    private LocalDate endDate;
+}
+```
+
+## Web Utilities
+
+The starter can register a global exception handler and an HTTP request log filter.
+
+```yaml
+awesome-tools:
+  exception-handler-enabled: true
+  request-log-enabled: true
+  request-log-exclude-patterns:
+    - /actuator/**
+    - /swagger/**
+    - /v3/api-docs/**
+```
+
+The default exception response contains `code`, `message`, `path`, `traceId`, `timestamp`, and validation `details`.
+To customize the response body, provide your own `ErrorResponseBuilder` bean.
+
+## Local Async Events
+
+Use `AsyncEventPublisher` to publish Spring events from a local executor:
+
+```java
+import com.github.huangguasky.awesometools.event.AsyncEventPublisher;
+
+public class OrderService {
+    private final AsyncEventPublisher eventPublisher;
+
+    public void createOrder() {
+        eventPublisher.publish(new OrderCreatedEvent());
+    }
+}
+```
+
+You can also mark a void listener/helper method with `@AsyncEvent` to run it asynchronously.
 
 ## Audit Logs
 
@@ -284,6 +362,12 @@ awesome-tools:
   key-prefix: awesome-tools
   trace-header: X-Trace-Id
   trace-filter-enabled: true
+  exception-handler-enabled: true
+  request-log-enabled: true
+  request-log-exclude-patterns:
+    - /actuator/**
+    - /swagger/**
+    - /v3/api-docs/**
 ```
 
 ## Feature Notes
@@ -292,6 +376,7 @@ awesome-tools:
 - `@Idempotent`: allows one successful execution for the same key within the expiry period. The key is released when business execution fails.
 - `@NoRepeatSubmit`: rejects repeated submits for the same key within the configured interval. If no key is specified, the method signature and arguments are used.
 - `@RateLimit`: local in-memory rate limiting with fixed window, sliding window, leaky bucket, and token bucket algorithms.
+- `@SlowLog`: prints warning logs for slow methods.
 - `@QueryCache`: query method cache with Redis/local-memory switching.
 - `@AuditLog`: records method, business number, success status, exception message, and cost, then publishes a Spring event.
 - `@Trace`: creates or reuses an MDC `traceId`; HTTP requests also receive the trace id in the response header.
